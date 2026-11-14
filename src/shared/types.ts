@@ -24,11 +24,26 @@ export interface ClueDefinition {
   kind: string;
   description: string;
 }
+/** 听取条件的目标：整段对白，或对白中的声音窗口。 */
+export type ListenTarget = "cue" | "sound";
+/**
+ * 调查方向的听取前置条件。
+ * sceneId/cueId 会按「当前路线的确切录音版本」解析为具体音源与播放区间，
+ * 因此旧版本录音的听取记录无法满足新版本条件。
+ */
+export interface ListenRequirement {
+  sceneId: SceneId;
+  cueId: string;
+  target: ListenTarget;
+  label: string;
+}
 export interface Choice {
   id: string;
   label: string;
   target: SceneId;
   requires: string[];
+  /** 没有听取要求的选项保持留空，始终可用。 */
+  listen: ListenRequirement[];
   description: string;
 }
 export interface Scene {
@@ -52,7 +67,15 @@ export interface Investigation {
   decisions: { sceneId: SceneId; choiceId: string }[];
   ending: string | null;
 }
-export type HeardHistory = Record<string, number>;
+/**
+ * 每个确切音源（录音版本）实际播放覆盖到的区间集合。
+ * 键为 Episode.id；区间按音频时间记录，拖动跳过的部分不在其中。
+ */
+export type Coverage = Record<string, AudioInterval[]>;
+export interface AudioInterval {
+  start: number;
+  end: number;
+}
 export interface AudioBookmark {
   sceneId: SceneId;
   start: number;
@@ -78,11 +101,11 @@ export interface ResumePoint {
   rate: number;
 }
 export interface CaseSnapshot {
-  version: 1;
+  version: 2;
   caseId: string;
   story: Investigation;
   evidence: EvidenceState;
-  heard: HeardHistory;
+  coverage: Coverage;
   resume: ResumePoint;
 }
 export interface SaveSlot {

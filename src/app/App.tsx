@@ -186,7 +186,12 @@ export function App() {
               content={CASE_CONTENT}
               story={c.story}
               clues={c.evidence.clues}
+              coverage={c.coverage}
               onChoose={c.choose}
+              onLocate={(gate) => {
+                c.locateGate(gate);
+                setTab("transcript");
+              }}
             />
             <div className="session-bar">
               <span>
@@ -226,7 +231,7 @@ export function App() {
               <TranscriptPanel
                 episode={c.episode}
                 position={c.audio.view.position}
-                history={c.heard}
+                coverage={c.coverage}
                 clues={c.evidence.clues}
                 onSeek={c.audio.seek}
                 onCollect={(cue) => {
@@ -235,7 +240,7 @@ export function App() {
                 }}
                 canCollect={(cue) =>
                   !c.audio.view.loading &&
-                  canCollectSound(c.heard, c.episode, cue)
+                  canCollectSound(c.coverage, c.episode, cue)
                 }
               />
             ) : (
@@ -318,13 +323,16 @@ export function App() {
               点击播放收听中文录音，右侧字幕随音频推进。点击时间码或拖动波形可以回听片段。
             </p>
             <p>
-              当你听到可疑声音，收集字幕下方的声音线索。已掌握的线索会改变角色回答，并解锁新的调查方向。
+              部分调查方向需要先听完指定的对白或声音才会开放。锁定的方向会标明缺少哪一段，点击「补听」可直接定位到对应录音版本的播放区间；没有听取要求的方向始终可用。
             </p>
             <p>
-              用「标记此刻」保留最近五秒的个人笔记，编辑观察，再从笔记跳回录音。自由笔记不会自动解锁证据。
+              只有真实播放经过的时间才算听过：倍速按音频时间正常累计，但拖动进度条跳过的部分仍是未听的空洞。线索会改变角色回答并切换录音版本，旧版本的收听记录不能代替新版本，需要重新听取。
             </p>
             <p>
-              从「调查存档」命名保存不同进度，也可导出或导入本地文件。新调查保留已有存档；切换存档会替换当前未保存进度，请先保存。
+              当你听到可疑声音，收集字幕下方的声音线索。用「标记此刻」保留最近五秒的个人笔记，编辑观察，再从笔记跳回录音。自由笔记不会自动解锁证据。
+            </p>
+            <p>
+              从「调查存档」命名保存不同进度，也可导出或导入本地文件。读取旧档案时会保留已证实的线索与笔记，但无法证明的收听区间会被保守标记为需补听。新调查保留已有存档；切换存档会替换当前未保存进度，请先保存。
             </p>
             <button className="primary" onClick={() => setAbout(false)}>
               开始倾听 <ArrowUpRight size={15} />

@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   Episode,
-  HeardHistory,
   CapturePort,
   TransportState,
 } from "../../../shared/types";
 import { bounded } from "../../../shared/time";
-import { markHeard } from "../../../shared/heard";
 import { captureWindow } from "../model/bookmark";
+import { PlaybackTracker } from "./playbackTracker";
+
 type View = Omit<TransportState, "loadedId">;
+
 export function useTransport(
   episode: Episode,
-  onHeard: (sourceId: string, position: number) => void,
+  onHeard: (sourceId: string, start: number, end: number) => void,
 ) {
   const loaded = useRef<{ element: HTMLAudioElement; episode: Episode } | null>(
       null,
@@ -33,6 +34,11 @@ export function useTransport(
   });
   useEffect(() => {
     const token = ++generation.current;
+    // 覆盖区间只由真实播放产生；跳转会被 tracker 切断，留下未听空洞。
+    const tracker = new PlaybackTracker(
+      (start, end) => callback.current(episode.id, start, end),
+      episode.duration,
+    );
     setView((v) => ({
       ...v,
       requestedId: episode.id,
@@ -57,6 +63,7 @@ export function useTransport(
       );
       seekTarget.current = null;
       rateTarget.current = null;
+      tracker.reset(audio.currentTime);
       old?.removeAttribute("src");
       setView((v) => ({
         ...v,
@@ -70,14 +77,16 @@ export function useTransport(
     };
     const time = () => {
       if (!valid() || loaded.current?.element !== audio) return;
-      setView((v) => ({ ...v, position: audio.currentTime }));
-      callback.current(
-        episode.id,
-        bounded(audio.currentTime, 0, episode.duration),
-      );
+      const position = bounded(audio.currentTime, 0, episode.duration);
+      setView((v) => ({ ...v, position }));
+      tracker.onTime(position, audio.paused, audio.seeking);
     };
+    const seeking = () => tracker.onSeeking(audio.currentTime);
     const playing = () => {
-      if (valid()) setView((v) => ({ ...v, playing: !audio.paused }));
+      if (!valid()) return;
+      if (!audio.paused) tracker.onPlay(audio.currentTime);
+      else tracker.onPause();
+      setView((v) => ({ ...v, playing: !audio.paused }));
     };
     const error = () => {
       if (valid())
@@ -90,14 +99,17 @@ export function useTransport(
     };
     audio.addEventListener("loadedmetadata", commit, { once: true });
     audio.addEventListener("timeupdate", time);
+    audio.addEventListener("seeking", seeking);
     audio.addEventListener("play", playing);
     audio.addEventListener("pause", playing);
     audio.addEventListener("ended", playing);
     audio.addEventListener("error", error);
     audio.load();
     return () => {
+      tracker.onPause();
       audio.pause();
       audio.removeEventListener("timeupdate", time);
+      audio.removeEventListener("seeking", seeking);
       audio.removeEventListener("play", playing);
       audio.removeEventListener("pause", playing);
       audio.removeEventListener("ended", playing);
@@ -115,10 +127,6 @@ export function useTransport(
     }
     a.currentTime = bounded(position, 0, a.duration || episode.duration);
     setView((v) => ({ ...v, position: a.currentTime }));
-    callback.current(
-      loaded.current!.episode.id,
-      bounded(a.currentTime, 0, loaded.current!.episode.duration),
-    );
   };
   const captureRange: CapturePort["captureRange"] = (_sceneId, width) => {
     const actual = loaded.current;
@@ -166,11 +174,4 @@ export function useTransport(
       setView((v) => ({ ...v, volume: n }));
     },
   };
-}
-export function recordPosition(
-  history: HeardHistory,
-  sourceId: string,
-  position: number,
-) {
-  return markHeard(history, sourceId, position);
 }

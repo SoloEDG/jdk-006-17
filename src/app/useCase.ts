@@ -1,19 +1,22 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type {
-  HeardHistory,
   SaveSlot,
   SceneId,
   EvidenceNote,
   Cue,
+  Coverage,
 } from "../shared/types";
+import { markHeardRange } from "../shared/heard";
 import {
   CASE_CONTENT,
   createInvestigation,
   enterScene,
   applyChoice,
   resolveEpisode,
+  episodeForScene,
 } from "../features/story";
-import { useTransport, recordPosition } from "../features/listening";
+import type { ResolvedGate } from "../features/story";
+import { useTransport } from "../features/listening";
 import {
   createEvidence,
   addNote,
@@ -36,7 +39,7 @@ export function useCase() {
   const [boot] = useState(() => readSlots(CASE_CONTENT));
   const [story, setStory] = useState(createInvestigation),
     [evidence, setEvidence] = useState(createEvidence),
-    [heard, setHeard] = useState<HeardHistory>({}),
+    [coverage, setCoverage] = useState<Coverage>({}),
     [slots, setSlots] = useState<SaveSlot[]>(boot.slots),
     [activeId, setActiveId] = useState<string | null>(null),
     [notice, setNotice] = useState(
@@ -44,9 +47,13 @@ export function useCase() {
     ),
     [dirty, setDirty] = useState(false);
   const episode = resolveEpisode(CASE_CONTENT, story.sceneId, evidence.clues);
-  const onHeard = useCallback((id: string, position: number) => {
-    setHeard((h) => recordPosition(h, id, position));
-  }, []);
+  // 仅在真实播放经过时记录音频时间区间；拖动不会触发该回调。
+  const onHeard = useCallback(
+    (id: string, start: number, end: number) => {
+      setCoverage((prev) => markHeardRange(prev, id, start, end));
+    },
+    [],
+  );
   const audio = useTransport(episode, onHeard);
   const run = (fn: () => void) => {
     try {
@@ -67,7 +74,13 @@ export function useCase() {
   };
   const choose = (id: string) =>
     run(() => {
-      const next = applyChoice(CASE_CONTENT, story, id, evidence.clues);
+      const next = applyChoice(
+        CASE_CONTENT,
+        story,
+        id,
+        evidence.clues,
+        coverage,
+      );
       audio.pause();
       audio.queueSeek(0);
       setStory(next);
@@ -98,13 +111,13 @@ export function useCase() {
     );
     if (!anchor) return;
     const sound = cue.sound;
-    const result = collectClue(evidence, episode, cue, heard, {
+    const result = collectClue(evidence, episode, cue, coverage, {
       ...anchor,
       start: sound?.start ?? cue.start,
       end: sound?.end ?? cue.end,
     });
     if (!result) {
-      setNotice("请先听完这段声音，或检查是否已收集。");
+      setNotice("请先完整听完这段声音，或检查是否已收集。");
       return;
     }
     audio.pause();
@@ -116,13 +129,40 @@ export function useCase() {
     go(n.anchor.sceneId, n.anchor.start);
     setNotice(`已定位到「${n.title}」对应声音，点击播放回听。`);
   };
+  /**
+   * 定位到缺失听取条件对应的录音版本与播放区间。
+   * 只负责跳转与暂停，不会替用户选择任何调查方向。
+   */
+  const locateGate = (gate: ResolvedGate) => {
+    audio.pause();
+    if (gate.sceneId !== story.sceneId) {
+      // 目标场景要按当前线索解析到确切录音版本后再跳转。
+      episodeForScene(CASE_CONTENT, gate.sceneId, evidence.clues);
+      audio.queueSeek(gate.start);
+      setStory((s) => enterScene(CASE_CONTENT, s, gate.sceneId));
+    } else {
+      audio.seek(gate.start);
+    }
+    setDirty(true);
+    setNotice(
+      `已定位到「${gate.label}」（${gate.episodeTitle} · ${gate.start.toFixed(
+        1,
+      )}s 起），点击播放补听；听完后再手动选择调查方向。`,
+    );
+  };
   const save = (name: string) =>
     run(() => {
-      const snapshot = createSnapshot(CASE_CONTENT, story, evidence, heard, {
-        sceneId: story.sceneId,
-        position: audio.view.position,
-        rate: audio.view.rate,
-      });
+      const snapshot = createSnapshot(
+        CASE_CONTENT,
+        story,
+        evidence,
+        coverage,
+        {
+          sceneId: story.sceneId,
+          position: audio.view.position,
+          rate: audio.view.rate,
+        },
+      );
       const old = slots.find((s) => s.id === activeId);
       const slot =
         old && name === old.name
@@ -151,7 +191,7 @@ export function useCase() {
       }
       setStory(snap.story);
       setEvidence(snap.evidence);
-      setHeard(snap.heard);
+      setCoverage(snap.coverage);
       setActiveId(id);
       setDirty(false);
       setNotice(`已载入「${slot.name}」，点击播放继续调查。`);
@@ -181,7 +221,7 @@ export function useCase() {
   return {
     story,
     evidence,
-    heard,
+    coverage,
     slots,
     activeId,
     notice,
@@ -193,6 +233,7 @@ export function useCase() {
     note,
     collect,
     jump,
+    locateGate,
     save,
     load,
     importText,
@@ -219,7 +260,7 @@ export function useCase() {
       if (story.sceneId !== "arrival") audio.queueSeek(0);
       setStory(createInvestigation());
       setEvidence(createEvidence());
-      setHeard({});
+      setCoverage({});
       setActiveId(null);
       setDirty(false);
       if (story.sceneId === "arrival") audio.seek(0);

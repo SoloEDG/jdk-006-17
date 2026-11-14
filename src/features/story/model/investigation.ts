@@ -2,7 +2,9 @@ import type {
   CaseContent,
   Investigation,
   SceneId,
+  Coverage,
 } from "../../../shared/types";
+import { assertChoiceAvailable } from "../lib/listenGates";
 export function createInvestigation(): Investigation {
   return {
     sceneId: "arrival",
@@ -31,12 +33,13 @@ export function applyChoice(
   state: Investigation,
   id: string,
   clues: string[],
+  coverage: Coverage,
 ): Investigation {
   const scene = content.scenes.find((s) => s.id === state.sceneId),
     choice = scene?.choices.find((c) => c.id === id);
   if (!choice) throw new Error("调查方向不存在");
-  if (!choice.requires.every((c) => clues.includes(c)))
-    throw new Error("声音证据不足，请先补充调查");
+  // 线索证据 + 指定对白/声音的实际听取区间，缺一不可。
+  assertChoiceAvailable(content, choice, clues, coverage);
   const next = enterScene(content, state, choice.target);
   return {
     ...next,

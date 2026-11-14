@@ -3,7 +3,7 @@ import type {
   Cue,
   Episode,
   EvidenceState,
-  HeardHistory,
+  Coverage,
 } from "../../../shared/types";
 import { canCollectSound } from "./eligibility";
 import { addNote } from "./notes";
@@ -11,13 +11,13 @@ export function collectClue(
   state: EvidenceState,
   episode: Episode,
   cue: Cue,
-  heard: HeardHistory,
+  coverage: Coverage,
   bookmark: AudioBookmark,
 ): EvidenceState | null {
   if (
     !cue.sound ||
     state.clues.includes(cue.sound.clueId) ||
-    !canCollectSound(heard, episode, cue)
+    !canCollectSound(coverage, episode, cue)
   )
     return null;
   const next = addNote(state, bookmark, cue.sound.description, "声音线索");

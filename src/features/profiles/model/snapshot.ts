@@ -2,7 +2,7 @@ import type {
   CaseContent,
   CaseSnapshot,
   EvidenceState,
-  HeardHistory,
+  Coverage,
   Investigation,
   ResumePoint,
 } from "../../../shared/types";
@@ -11,11 +11,11 @@ export function createSnapshot(
   content: CaseContent,
   story: Investigation,
   evidence: EvidenceState,
-  heard: HeardHistory,
+  coverage: Coverage,
   resume: ResumePoint,
 ): CaseSnapshot {
   return validateSnapshot(
-    { version: 1, caseId: content.id, story, evidence, heard, resume },
+    { version: 2, caseId: content.id, story, evidence, coverage, resume },
     content,
   );
 }

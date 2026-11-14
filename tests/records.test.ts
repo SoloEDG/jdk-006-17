@@ -19,7 +19,7 @@ import {
   exportSlot,
   parseImported,
 } from "../src/features/profiles/index";
-import type { CaseContent, Investigation } from "../src/shared/types";
+import type { CaseContent, Coverage, Investigation } from "../src/shared/types";
 const content: CaseContent = {
   id: "test",
   title: "test",
@@ -64,12 +64,12 @@ const story: Investigation = {
   ending: null,
 };
 const anchor = { sceneId: "arrival" as const, start: 5, end: 7 };
-function snapshot() {
+function snapshot(coverage: Coverage = { "arrival-main": [{ start: 0, end: 7 }] }) {
   return createSnapshot(
     content,
     story,
     addNote(createEvidence(), anchor, "memo"),
-    { "arrival-main": 7 },
+    coverage,
     { sceneId: "arrival", position: 6, rate: 1 },
   );
 }
@@ -84,29 +84,51 @@ test("notes normalize anchors, edit, pin and delete without mutation", () => {
   assert.equal(deleteNote(state, id).selectedId, null);
   assert.throws(() => addNote(initial, { ...anchor, end: NaN }, "bad"));
 });
-test("clues unlock at actual sound end, use episode source and cannot duplicate", () => {
+test("clues unlock only when the full sound window was actually covered", () => {
   const episode = content.episodes[0],
     cue = episode.cues[0];
-  assert.equal(canCollectSound({ "arrival-main": 6 }, episode, cue), false);
-  assert.equal(canCollectSound({ "arrival-main": 7 }, episode, cue), true);
+  // 播放头到过 7s，但中间 5-7s 是拖动跳过的空洞：不能收集。
   assert.equal(
-    collectClue(createEvidence(), episode, cue, { "arrival-main": 6 }, anchor),
+    canCollectSound({ "arrival-main": [{ start: 0, end: 4.9 }] }, episode, cue),
+    false,
+  );
+  assert.equal(
+    canCollectSound(
+      { "arrival-main": [
+        { start: 0, end: 5.2 },
+        { start: 6.8, end: 9 },
+      ] },
+      episode,
+      cue,
+    ),
+    false,
+  );
+  // 完整覆盖声音窗口（可由多段相邻区间拼成）。
+  const covered: Coverage = {
+    "arrival-main": [
+      { start: 0, end: 5.4 },
+      { start: 5.3, end: 7.2 },
+    ],
+  };
+  assert.equal(canCollectSound(covered, episode, cue), true);
+  assert.equal(
+    collectClue(createEvidence(), episode, cue, { "arrival-main": [{ start: 0, end: 6.9 }] }, anchor),
     null,
   );
-  const found = collectClue(
-    createEvidence(),
-    episode,
-    cue,
-    { "arrival-main": 7 },
-    anchor,
-  )!;
+  const found = collectClue(createEvidence(), episode, cue, covered, anchor)!;
   assert.deepEqual(found.clues, ["bell"]);
+  assert.equal(collectClue(found, episode, cue, covered, anchor), null);
+});
+test("other recording versions cannot satisfy a window on this episode id", () => {
+  const episode = content.episodes[0],
+    cue = episode.cues[0];
+  // 听的是另一个音源版本，即使时间轴覆盖也不算。
   assert.equal(
-    collectClue(found, episode, cue, { "arrival-main": 10 }, anchor),
-    null,
+    canCollectSound({ "arrival-other": [{ start: 0, end: 20 }] }, episode, cue),
+    false,
   );
 });
-test("snapshot rebuild strips unknown fields and rejects invalid ranges and heard sources", () => {
+test("snapshot rebuild strips unknown fields and rejects invalid ranges and sources", () => {
   const s = snapshot();
   const raw = JSON.parse(JSON.stringify(s));
   raw.extra = "drop";
@@ -114,11 +136,51 @@ test("snapshot rebuild strips unknown fields and rejects invalid ranges and hear
   const checked = validateSnapshot(raw, content);
   assert.equal("extra" in checked, false);
   assert.deepEqual(checked.evidence.notes[0].anchor, anchor);
-  raw.heard.unknown = 1;
-  assert.throws(() => validateSnapshot(raw, content), /听|source|音源/i);
-  delete raw.heard.unknown;
-  raw.evidence.notes[0].anchor.end = Infinity;
+  raw.coverage.unknown = [{ start: 0, end: 1 }];
+  assert.throws(() => validateSnapshot(raw, content), /音源/);
+  delete raw.coverage.unknown;
+  raw.coverage["arrival-main"][0].end = Infinity;
   assert.throws(() => validateSnapshot(raw, content));
+});
+test("legacy v1 saves migrate to empty coverage: proven notes kept, listening must be redone", () => {
+  const v1 = {
+    version: 1,
+    caseId: "test",
+    story,
+    evidence: addNote(createEvidence(), anchor, "memo"),
+    heard: { "arrival-main": 18 },
+    resume: { sceneId: "arrival" as const, position: 6, rate: 1 },
+  };
+  const migrated = validateSnapshot(v1, content);
+  assert.equal(migrated.version, 2);
+  assert.deepEqual(migrated.coverage, {});
+  // 已证实的笔记与线索保留，只是听取区间需要补听。
+  assert.equal(migrated.evidence.notes.length, 1);
+  // 旧档无法证明跳过情况：即使曾到过 18s，声音窗口仍判未听。
+  const episode = content.episodes[0];
+  assert.equal(
+    canCollectSound(migrated.coverage, episode, episode.cues[0]),
+    false,
+  );
+  assert.throws(() =>
+    validateSnapshot({ ...v1, heard: { ghost: 1 } }, content),
+  );
+});
+test("coverage intervals are merged and bounded on save", () => {
+  const s = snapshot({
+    "arrival-main": [
+      { start: 8, end: 10 },
+      { start: 2, end: 4 },
+      { start: 3.9, end: 6 },
+    ],
+  });
+  assert.deepEqual(s.coverage["arrival-main"], [
+    { start: 2, end: 6 },
+    { start: 8, end: 10 },
+  ]);
+  assert.throws(() =>
+    snapshot({ "arrival-main": [{ start: 5, end: 21 }] }),
+  );
 });
 test("slots keep deep independent copies and imported files get new identity", () => {
   const s = snapshot();

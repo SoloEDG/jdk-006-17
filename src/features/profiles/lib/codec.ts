@@ -2,9 +2,12 @@ import type {
   AudioBookmark,
   CaseContent,
   CaseSnapshot,
+  Coverage,
   EvidenceNote,
   SceneId,
 } from "../../../shared/types";
+import { mergeIntervals } from "../../../shared/heard";
+
 type Obj = Record<string, unknown>;
 function object(value: unknown, label: string): Obj {
   if (!value || typeof value !== "object" || Array.isArray(value))
@@ -28,12 +31,14 @@ function boolean(value: unknown, label: string): boolean {
   if (typeof value !== "boolean") throw new Error(`${label}必须是布尔值`);
   return value;
 }
+
 export function validateSnapshot(
   input: unknown,
   content: CaseContent,
 ): CaseSnapshot {
   const root = object(input, "存档");
-  if (root.version !== 1) throw new Error("不支持的存档版本");
+  if (root.version !== 1 && root.version !== 2)
+    throw new Error("不支持的存档版本");
   if (root.caseId !== content.id) throw new Error("存档不属于当前案件");
   const scene = (value: unknown): SceneId => {
     const id = string(value, "场景");
@@ -109,14 +114,9 @@ export function validateSnapshot(
       : string(rawEvidence.selectedId, "选中笔记");
   if (selectedId && !notes.some((note) => note.id === selectedId))
     throw new Error("选中的笔记不存在");
-  const heard: Record<string, number> = {};
-  for (const [id, value] of Object.entries(object(root.heard, "收听记录"))) {
-    const episode = content.episodes.find((item) => item.id === id);
-    if (!episode) throw new Error("收听记录包含未知音源");
-    const position = number(value, "收听位置");
-    if (position > episode.duration) throw new Error("收听位置超出音频");
-    heard[id] = position;
-  }
+
+  const coverage = parseCoverage(root, content);
+
   const rawResume = object(root.resume, "播放进度");
   const sceneId = scene(rawResume.sceneId),
     position = number(rawResume.position, "播放位置"),
@@ -124,11 +124,42 @@ export function validateSnapshot(
   if (position > duration(sceneId) || rate < 0.25 || rate > 4)
     throw new Error("播放进度无效");
   return {
-    version: 1,
+    version: 2,
     caseId: content.id,
     story,
     evidence: { notes, clues, selectedId },
-    heard,
+    coverage,
     resume: { sceneId, position, rate },
   };
+}
+
+function parseCoverage(root: Obj, content: CaseContent): Coverage {
+  if (root.version === 1) {
+    // 旧档案只记录「播放头到过的最大位置」，无法证明拖动跳过的部分听过，
+    // 因此保守处理：已证实的线索/笔记保留，听取区间一律视为需补听。
+    const legacy = object(root.heard, "收听记录");
+    for (const [id, value] of Object.entries(legacy)) {
+      const episode = content.episodes.find((item) => item.id === id);
+      if (!episode) throw new Error("收听记录包含未知音源");
+      number(value, "收听位置");
+    }
+    return {};
+  }
+  const coverage: Coverage = {};
+  const raw = object(root.coverage, "收听区间");
+  for (const [id, value] of Object.entries(raw)) {
+    const episode = content.episodes.find((item) => item.id === id);
+    if (!episode) throw new Error("收听区间包含未知音源");
+    const intervals = array(value, "音源收听区间").map((item) => {
+      const range = object(item, "收听区间");
+      const start = number(range.start, "区间起点"),
+        end = number(range.end, "区间终点");
+      if (end < start || end > episode.duration)
+        throw new Error("收听区间超出音频");
+      return { start, end };
+    });
+    const merged = mergeIntervals(intervals);
+    if (merged.length) coverage[id] = merged;
+  }
+  return coverage;
 }

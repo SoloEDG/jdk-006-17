@@ -683,19 +683,77 @@ h1 span {
   gap: 9px;
   margin-top: 15px;
 }
-.direction-grid > button {
+.direction-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #344751;
+  border-radius: 4px;
+  background: #172631;
+  overflow: hidden;
+}
+.direction-card.locked {
+  border-style: dashed;
+  border-color: #4a4636;
+  background: #16202a;
+}
+.direction-grid .direction-main {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 13px 11px;
-  border: 1px solid #344751;
-  border-radius: 4px;
+  border: 0;
+  border-radius: 0;
   text-align: left;
-  background: #172631;
+  background: transparent;
+  width: 100%;
+  flex: 1;
 }
-.direction-grid > button:not(:disabled):hover {
+.direction-card:not(.locked):hover {
   border-color: #aa966e;
   background: #25333a;
+}
+.direction-card.locked .direction-main {
+  cursor: not-allowed;
+}
+.direction-card.locked .direction-main:disabled {
+  opacity: 0.75;
+}
+.gate-hints {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 11px 11px 48px;
+}
+.gate-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid #4d5a46;
+  border-radius: 3px;
+  background: #1d2a22;
+  color: #a9c0a4;
+  text-align: left;
+  font-size: 8px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.gate-hint:hover {
+  border-color: #8aa87f;
+  background: #24352b;
+}
+.gate-hint > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.gate-hint em {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-style: normal;
+  color: #7d9486;
+  font-size: 7px;
 }
 .direction-icon {
   display: grid;
@@ -708,6 +766,11 @@ h1 span {
   border-radius: 4px;
   color: #bda679;
 }
+.direction-card.locked .direction-icon {
+  color: #8f8a72;
+  background: #2a2d2b;
+  border-color: #45483f;
+}
 .direction-grid strong {
   font-size: 10px;
   display: block;
@@ -719,6 +782,9 @@ h1 span {
   display: block;
   margin-top: 5px;
   color: #6e8b9b;
+}
+.direction-card.locked small {
+  color: #9c8f74;
 }
 .session-bar {
   display: flex;
@@ -1477,8 +1543,11 @@ footer i {
   .direction-grid {
     grid-template-columns: 1fr;
   }
-  .direction-grid > button {
+  .direction-grid .direction-main {
     padding: 11px;
+  }
+  .gate-hints {
+    padding-left: 11px;
   }
   .cue-list {
     height: 340px;

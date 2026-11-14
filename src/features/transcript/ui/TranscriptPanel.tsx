@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
 import { Search, AudioLines, Check, ScanLine } from "lucide-react";
-import type { Cue, Episode, HeardHistory } from "../../../shared/types";
+import type { Cue, Episode, Coverage } from "../../../shared/types";
 import { formatTime } from "../../../shared/time";
 import { currentCue, isCueHeard, searchCues } from "../lib/cues";
 import { useTranscript } from "../model/useTranscript";
 export function TranscriptPanel({
   episode,
   position,
-  history,
+  coverage,
   clues,
   onSeek,
   onCollect,
@@ -15,7 +15,7 @@ export function TranscriptPanel({
 }: {
   episode: Episode;
   position: number;
-  history: HeardHistory;
+  coverage: Coverage;
   clues: string[];
   onSeek: (time: number) => void;
   onCollect: (cue: Cue) => void;
@@ -30,6 +30,7 @@ export function TranscriptPanel({
         ?.querySelector('[data-active="true"]')
         ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [active?.id, follow]);
+  const results = searchCues(episode, query, coverage);
   return (
     <section className="transcript-panel">
       <div className="transcript-heading">
@@ -54,8 +55,8 @@ export function TranscriptPanel({
         />
       </div>
       <div className="cue-list" ref={list}>
-        {searchCues(episode, query, history).map((c) => {
-          const heard = isCueHeard(history, episode, c),
+        {results.map((c) => {
+          const heard = isCueHeard(coverage, episode, c),
             live = c.id === active?.id,
             known = heard || live;
           return (
@@ -99,7 +100,7 @@ export function TranscriptPanel({
             </div>
           );
         })}
-        {!searchCues(episode, query, history).length && (
+        {!results.length && (
           <p className="empty-small">没有找到已听过的对白。</p>
         )}
       </div>
